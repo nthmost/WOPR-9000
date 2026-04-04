@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WOPR-9000</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="shell">
+
+  <div class="terminal">
+    <div class="bezel-bar">
+      <div class="bezel-dots">
+        <span></span><span></span><span></span>
+      </div>
+      <span class="bezel-title" id="bezelTitle">WOPR-9000</span>
+      <span class="bezel-status" id="bezelStatus">READY</span>
+    </div>
+
+    <div class="screen" id="screen">
+      <div class="output" id="output">
+        <div class="boot-msg" id="bootMsg">
+          <p>WOPR-9000 DOCUMENT INTERFACE</p>
+          <p>LOADING CONTEXT...</p>
+          <p>────────────────────────────────────</p>
+          <p>SHALL WE PLAY A GAME?</p>
+        </div>
+        <span class="cursor" id="cursor"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="input-row">
+    <div class="input-wrap">
+      <textarea
+        id="userInput"
+        class="user-input"
+        placeholder="ask anything..."
+        rows="1"
+        autofocus
+      ></textarea>
+    </div>
+    <button class="btn btn-enter" id="enterBtn">Enter</button>
+    <button class="btn btn-clear" id="clearBtn">Clear</button>
+    <button class="btn btn-stop"  id="stopBtn"  disabled>Stop</button>
+  </div>
+
+  <div class="status-bar" id="statusBar"></div>
+
+</div>
+
+<script>
+(function() {
+  const output    = document.getElementById('output');
+  const cursor    = document.getElementById('cursor');
+  const screen    = document.getElementById('screen');
+  const inputEl   = document.getElementById('userInput');
+  const enterBtn  = document.getElementById('enterBtn');
+  const clearBtn  = document.getElementById('clearBtn');
+  const stopBtn   = document.getElementById('stopBtn');
+  const statusBar = document.getElementById('statusBar');
+  const bezelStatus = document.getElementById('bezelStatus');
+  const bezelTitle  = document.getElementById('bezelTitle');
+
+  let messages  = [];
+  let loading   = false;
+  let abortCtrl = null;
+
+  // Load config from server
+  fetch('config')
+    .then(r => r.json())
+    .then(cfg => {
+      if (cfg.title) {
+        bezelTitle.textContent = cfg.title;
+        document.title = cfg.title;
+      }
+    })
+    .catch(() => {});
+
+  // Auto-resize textarea
+  inputEl.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+
+  inputEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!loading) send();
+    }
+  });
+
+  enterBtn.addEventListener('click', () => { if (!loading) send(); });
+  clearBtn.addEventListener('click', clear);
+  stopBtn.addEventListener('click', stop);
+
+  function clear() {
+    messages = [];
+    output.innerHTML = '';
+    output.appendChild(cursor);
+    statusBar.textContent = '';
+    setStatus('READY');
+    inputEl.focus();
+  }
+
+  function stop() {
+    if (abortCtrl) { abortCtrl.abort(); abortCtrl = null; }
+  }
+
+  function setStatus(s) { bezelStatus.textContent = s; }
+
+  function setLoading(on) {
+    loading = on;
+    enterBtn.disabled = on;
+    stopBtn.disabled = !on;
+    inputEl.disabled = on;
+    setStatus(on ? 'PROCESSING' : 'READY');
+  }
+
+  function send() {
+    const text = inputEl.value.trim();
+    if (!text) return;
+
+    messages.push({ role: 'user', content: text });
+    appendLine('user', text);
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+
+    const loadEl = appendLoading();
+    setLoading(true);
+    statusBar.textContent = '';
+
+    abortCtrl = new AbortController();
+
+    fetch('chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages }),
+      signal: abortCtrl.signal,
+    })
+    .then(r => r.json())
+    .then(data => {
+      loadEl.remove();
+      if (data.error) {
+        appendLine('error', '⚠ ' + data.error);
+        messages.pop();
+      } else {
+        messages.push({ role: 'assistant', content: data.content });
+        appendLine('assistant', data.content);
+        if (data.usage) {
+          statusBar.textContent =
+            `↑ ${data.usage.input.toLocaleString()} tokens  ↓ ${data.usage.output.toLocaleString()} tokens`;
+        }
+      }
+    })
+    .catch(err => {
+      loadEl.remove();
+      if (err.name !== 'AbortError') {
+        appendLine('error', '⚠ ' + err.message);
+        messages.pop();
+      } else {
+        appendLine('error', '// stopped');
+      }
+    })
+    .finally(() => {
+      setLoading(false);
+      abortCtrl = null;
+      inputEl.disabled = false;
+      inputEl.focus();
+    });
+  }
+
+  function appendLine(type, text) {
+    cursor.remove();
+    const div = document.createElement('div');
+    if (type === 'user') {
+      div.className = 'line-user';
+      div.textContent = text;
+    } else if (type === 'assistant') {
+      div.className = 'line-assistant';
+      div.innerHTML = formatText(text);
+    } else {
+      div.className = 'line-error';
+      div.textContent = text;
+    }
+    output.appendChild(div);
+    output.appendChild(cursor);
+    scrollEnd();
+    return div;
+  }
+
+  function appendLoading() {
+    cursor.remove();
+    const div = document.createElement('div');
+    div.className = 'loading-line';
+    div.innerHTML = '<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>';
+    output.appendChild(div);
+    output.appendChild(cursor);
+    scrollEnd();
+    return div;
+  }
+
+  function scrollEnd() { screen.scrollTop = screen.scrollHeight; }
+
+  function formatText(text) {
+    return text
+      .replace(/```[\s\S]*?```/g, m => {
+        const code = m.slice(3, -3).replace(/^\w+\n/, '');
+        return `<pre><code>${esc(code)}</code></pre>`;
+      })
+      .replace(/`([^`]+)`/g,  '<code>$1</code>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g,  '<em>$1</em>')
+      .replace(/^#{4} (.+)$/gm, '<h4>$1</h4>')
+      .replace(/^#{3} (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^#{2} (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^> (.+)$/gm,  '<blockquote>$1</blockquote>')
+      .replace(/^---$/gm,     '<hr>')
+      .replace(/\n\n/g, '\n')
+      .replace(/\n/g,   '<br>');
+  }
+
+  function esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+})();
+</script>
+</body>
+</html>
