@@ -280,14 +280,7 @@
     fileDropdown.hidden = true;
     fileMenuBtn.textContent = 'FILE ▾';
 
-    cursor.remove();
-    const header = document.createElement('div');
-    header.className = 'line-file-header';
-    header.textContent = `── FILE: ${f.path} ──`;
-    output.appendChild(header);
-    output.appendChild(cursor);
-    scrollEnd();
-
+    // First fetch the file content, then inject into conversation
     fetch('file', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -297,15 +290,63 @@
     .then(data => {
       if (data.error) {
         appendLine('error', '⚠ ' + data.error);
-      } else {
-        const div = document.createElement('div');
-        div.className = 'line-file-content';
-        div.innerHTML = formatText(data.content);
-        cursor.remove();
-        output.appendChild(div);
-        output.appendChild(cursor);
-        scrollEnd();
+        return;
       }
+
+      // Show load indicator in terminal
+      cursor.remove();
+      const header = document.createElement('div');
+      header.className = 'line-file-header';
+      header.textContent = `── LOADING: ${f.name} ──`;
+      output.appendChild(header);
+      output.appendChild(cursor);
+      scrollEnd();
+
+      // Inject file content as a user message into the conversation
+      const userMsg = `[FILE: ${f.name}]\n\n${data.content}`;
+      messages.push({ role: 'user', content: userMsg });
+
+      const loadEl = appendLoading();
+      setLoading(true);
+
+      abortCtrl = new AbortController();
+
+      fetch('chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages }),
+        signal: abortCtrl.signal,
+      })
+      .then(r => r.json())
+      .then(resp => {
+        loadEl.remove();
+        if (resp.error) {
+          appendLine('error', '⚠ ' + resp.error);
+          messages.pop();
+        } else {
+          messages.push({ role: 'assistant', content: resp.content });
+          appendLine('assistant', resp.content);
+          if (resp.usage) {
+            statusBar.textContent =
+              `↑ ${resp.usage.input.toLocaleString()} tokens  ↓ ${resp.usage.output.toLocaleString()} tokens`;
+          }
+        }
+      })
+      .catch(err => {
+        loadEl.remove();
+        if (err.name !== 'AbortError') {
+          appendLine('error', '⚠ ' + err.message);
+          messages.pop();
+        } else {
+          appendLine('error', '// stopped');
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+        abortCtrl = null;
+        inputEl.disabled = false;
+        inputEl.focus();
+      });
     })
     .catch(err => appendLine('error', '⚠ ' + err.message));
   }
