@@ -308,12 +308,15 @@
     });
 
     sidebar.hidden = false;
-    // Trigger slide-in on next frame
-    requestAnimationFrame(() => sidebar.classList.add('visible'));
+    requestAnimationFrame(() => {
+      sidebar.classList.add('visible');
+      document.querySelector('.shell').classList.add('sidebar-open');
+    });
   }
 
   function hideKeyboard() {
     sidebar.classList.remove('visible');
+    document.querySelector('.shell').classList.remove('sidebar-open');
     sidebar.addEventListener('transitionend', () => {
       sidebar.hidden = true;
     }, { once: true });
