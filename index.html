@@ -10,7 +10,6 @@
 <div class="shell">
 
   <div class="main-area">
-
     <div class="terminal">
       <div class="bezel-bar">
         <div class="file-menu" id="fileMenu">
@@ -20,7 +19,6 @@
         <span class="bezel-title" id="bezelTitle">WOPR-9000</span>
         <span class="bezel-status" id="bezelStatus">READY</span>
       </div>
-
       <div class="screen" id="screen">
         <div class="output" id="output">
           <div class="boot-msg" id="bootMsg">
@@ -33,16 +31,15 @@
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- Sidebar: hidden until a file with menu options is loaded -->
-    <div class="sidebar" id="sidebar" hidden>
-      <div class="sidebar-header">
-        <span class="sidebar-label" id="sidebarLabel">MENU</span>
-        <button class="key key-esc" id="sidebarClose">ESC</button>
-      </div>
-      <div class="sidebar-keys" id="sidebarKeys"></div>
+  <!-- Sidebar: fixed overlay from right edge, independent of terminal layout -->
+  <div class="sidebar" id="sidebar" hidden>
+    <div class="sidebar-header">
+      <span class="sidebar-label" id="sidebarLabel">MENU</span>
+      <button class="key key-esc" id="sidebarClose">ESC</button>
     </div>
-
+    <div class="sidebar-keys" id="sidebarKeys"></div>
   </div>
 
   <div class="input-row">
