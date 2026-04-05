@@ -9,27 +9,40 @@
 <body>
 <div class="shell">
 
-  <div class="terminal">
-    <div class="bezel-bar">
-      <div class="file-menu" id="fileMenu">
-        <button class="file-menu-btn" id="fileMenuBtn">FILE ▾</button>
-        <div class="file-dropdown" id="fileDropdown" hidden></div>
+  <div class="main-area">
+
+    <div class="terminal">
+      <div class="bezel-bar">
+        <div class="file-menu" id="fileMenu">
+          <button class="file-menu-btn" id="fileMenuBtn">FILE ▾</button>
+          <div class="file-dropdown" id="fileDropdown" hidden></div>
+        </div>
+        <span class="bezel-title" id="bezelTitle">WOPR-9000</span>
+        <span class="bezel-status" id="bezelStatus">READY</span>
       </div>
-      <span class="bezel-title" id="bezelTitle">WOPR-9000</span>
-      <span class="bezel-status" id="bezelStatus">READY</span>
+
+      <div class="screen" id="screen">
+        <div class="output" id="output">
+          <div class="boot-msg" id="bootMsg">
+            <p>WOPR-9000 DOCUMENT INTERFACE</p>
+            <p>LOADING CONTEXT...</p>
+            <p>────────────────────────────────────</p>
+            <p>SHALL WE PLAY A GAME?</p>
+          </div>
+          <span class="cursor" id="cursor"></span>
+        </div>
+      </div>
     </div>
 
-    <div class="screen" id="screen">
-      <div class="output" id="output">
-        <div class="boot-msg" id="bootMsg">
-          <p>WOPR-9000 DOCUMENT INTERFACE</p>
-          <p>LOADING CONTEXT...</p>
-          <p>────────────────────────────────────</p>
-          <p>SHALL WE PLAY A GAME?</p>
-        </div>
-        <span class="cursor" id="cursor"></span>
+    <!-- Sidebar: hidden until a file with menu options is loaded -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-label" id="sidebarLabel">MENU</span>
+        <button class="key key-esc" id="sidebarClose">ESC</button>
       </div>
+      <div class="sidebar-keys" id="sidebarKeys"></div>
     </div>
+
   </div>
 
   <div class="input-row">
@@ -48,15 +61,6 @@
   </div>
 
   <div class="status-bar" id="statusBar"></div>
-
-  <!-- Keyboard panel slides up when a file with menu options is loaded -->
-  <div class="keyboard-panel" id="keyboardPanel" hidden>
-    <div class="keyboard-header">
-      <span class="keyboard-label" id="keyboardLabel">MENU</span>
-      <button class="key key-esc" id="keyboardClose">ESC</button>
-    </div>
-    <div class="keyboard-keys" id="keyboardKeys"></div>
-  </div>
 
 </div>
 
@@ -240,12 +244,12 @@
 
   // ── KEYBOARD PANEL ────────────────────────────────────────────────────
 
-  const keyboardPanel = document.getElementById('keyboardPanel');
-  const keyboardKeys  = document.getElementById('keyboardKeys');
-  const keyboardLabel = document.getElementById('keyboardLabel');
-  const keyboardClose = document.getElementById('keyboardClose');
+  const sidebar = document.getElementById('sidebar');
+  const sidebarKeys  = document.getElementById('sidebarKeys');
+  const sidebarLabel = document.getElementById('sidebarLabel');
+  const sidebarClose = document.getElementById('sidebarClose');
 
-  keyboardClose.addEventListener('click', hideKeyboard);
+  sidebarClose.addEventListener('click', hideKeyboard);
 
   function parseMenuItems(content) {
     // Strategy 1: look for explicit trigger phrase, grab the list that follows.
@@ -287,8 +291,8 @@
   }
 
   function showKeyboard(items, filename) {
-    keyboardLabel.textContent = filename.replace(/\.md$/, '').replace(/_/g, ' ').toUpperCase();
-    keyboardKeys.innerHTML = '';
+    sidebarLabel.textContent = filename.replace(/\.md$/, '').replace(/_/g, ' ').toUpperCase();
+    sidebarKeys.innerHTML = '';
 
     items.forEach(item => {
       const btn = document.createElement('button');
@@ -300,18 +304,18 @@
         inputEl.dispatchEvent(new Event('input'));
         send();
       });
-      keyboardKeys.appendChild(btn);
+      sidebarKeys.appendChild(btn);
     });
 
-    keyboardPanel.hidden = false;
+    sidebar.hidden = false;
     // Trigger slide-in on next frame
-    requestAnimationFrame(() => keyboardPanel.classList.add('visible'));
+    requestAnimationFrame(() => sidebar.classList.add('visible'));
   }
 
   function hideKeyboard() {
-    keyboardPanel.classList.remove('visible');
-    keyboardPanel.addEventListener('transitionend', () => {
-      keyboardPanel.hidden = true;
+    sidebar.classList.remove('visible');
+    sidebar.addEventListener('transitionend', () => {
+      sidebar.hidden = true;
     }, { once: true });
   }
 
