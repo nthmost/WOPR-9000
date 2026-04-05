@@ -131,6 +131,36 @@ def chat():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/files')
+def list_files():
+    """Return list of files available for direct viewing."""
+    if not DOCS_DIR.exists():
+        return jsonify([])
+    files = []
+    for ext in ('*.md', '*.txt'):
+        for f in sorted(DOCS_DIR.rglob(ext)):
+            if f.name == 'SYSTEM_PROMPT.md':
+                continue
+            files.append({
+                'name': f.name,
+                'path': str(f.relative_to(DOCS_DIR)),
+            })
+    return jsonify(files)
+
+
+@app.route('/file', methods=['POST'])
+def get_file():
+    """Return the content of a specific file."""
+    data = request.get_json()
+    path = data.get('path', '')
+    target = (DOCS_DIR / path).resolve()
+    if not str(target).startswith(str(DOCS_DIR.resolve())):
+        return jsonify({'error': 'Invalid path'}), 400
+    if not target.exists():
+        return jsonify({'error': 'File not found'}), 404
+    return jsonify({'content': target.read_text(encoding='utf-8'), 'name': target.name})
+
+
 @app.route('/reload', methods=['POST'])
 def reload_route():
     """Hot-reload documents without restarting."""

@@ -58,6 +58,88 @@ html, body {
   max-height: 78vh;
 }
 
+/* ── FILE MENU ── */
+
+.file-menu { position: relative; }
+
+.file-menu-btn {
+  font-family: var(--font-term);
+  font-size: 1.1rem;
+  letter-spacing: 0.08em;
+  color: var(--phosphor-dim);
+  background: none;
+  border: 1px solid #3a1a4a;
+  border-radius: 4px;
+  padding: 0.15rem 0.6rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.file-menu-btn:hover {
+  color: var(--prompt);
+  border-color: var(--prompt);
+  text-shadow: var(--prompt-glow);
+}
+
+.file-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 240px;
+  max-width: 380px;
+  background: #0e0618;
+  border: 1.5px solid var(--prompt);
+  border-radius: 4px;
+  box-shadow: 4px 4px 0 var(--accent-dark);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.file-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-term);
+  font-size: 1.05rem;
+  color: var(--phosphor);
+  background: none;
+  border: none;
+  border-bottom: 1px solid #1a0a2a;
+  padding: 0.45rem 0.85rem;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-item:last-child { border-bottom: none; }
+
+.file-item:hover { background: #1a0a2a; color: var(--prompt); text-shadow: var(--prompt-glow); }
+
+.file-loading, .file-empty { color: var(--phosphor-dim); cursor: default; font-style: italic; }
+.file-loading:hover, .file-empty:hover { background: none; color: var(--phosphor-dim); text-shadow: none; }
+
+.line-file-header {
+  font-family: var(--font-term);
+  font-size: 1.1rem;
+  color: var(--prompt);
+  text-shadow: var(--prompt-glow);
+  margin: 1rem 0 0.35rem;
+  letter-spacing: 0.06em;
+}
+
+.line-file-content {
+  font-family: var(--font-term);
+  font-size: 1.05rem;
+  color: #c8b0c0;
+  border-left: 2px solid #2a1a3a;
+  padding-left: 0.75rem;
+  margin-bottom: 0.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ── BEZEL TOP BAR ── */
 
 .bezel-bar {
