@@ -133,13 +133,16 @@ def chat():
 
 @app.route('/files')
 def list_files():
-    """Return list of files available for direct viewing."""
+    """Return list of files available for direct viewing.
+    Only shows files at the root of DOCS_DIR — subdirectories are
+    data sources for Claude context, not human-browsable documents.
+    """
     if not DOCS_DIR.exists():
         return jsonify([])
     files = []
     for ext in ('*.md', '*.txt'):
-        for f in sorted(DOCS_DIR.rglob(ext)):
-            if f.name == 'SYSTEM_PROMPT.md':
+        for f in sorted(DOCS_DIR.glob(ext)):  # glob not rglob — root only
+            if f.name in ('SYSTEM_PROMPT.md',):
                 continue
             files.append({
                 'name': f.name,
