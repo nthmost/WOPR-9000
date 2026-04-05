@@ -49,6 +49,15 @@
 
   <div class="status-bar" id="statusBar"></div>
 
+  <!-- Keyboard panel slides up when a file with menu options is loaded -->
+  <div class="keyboard-panel" id="keyboardPanel" hidden>
+    <div class="keyboard-header">
+      <span class="keyboard-label" id="keyboardLabel">MENU</span>
+      <button class="key key-esc" id="keyboardClose">ESC</button>
+    </div>
+    <div class="keyboard-keys" id="keyboardKeys"></div>
+  </div>
+
 </div>
 
 <script>
@@ -226,6 +235,70 @@
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
+  // ── KEYBOARD PANEL ────────────────────────────────────────────────────
+
+  const keyboardPanel = document.getElementById('keyboardPanel');
+  const keyboardKeys  = document.getElementById('keyboardKeys');
+  const keyboardLabel = document.getElementById('keyboardLabel');
+  const keyboardClose = document.getElementById('keyboardClose');
+
+  keyboardClose.addEventListener('click', hideKeyboard);
+
+  function parseMenuItems(content) {
+    // Extract numbered or bulleted list items from document content.
+    // Looks for lines matching:  * item text  or  1. item text  or  - item text
+    const lines = content.split('\n');
+    const items = [];
+    const patterns = [
+      /^\s*\*\s+(.+)$/,          // * item
+      /^\s*-\s+(.+)$/,           // - item
+      /^\s*\d+[\.\)]\s+(.+)$/,   // 1. item  or  1) item
+    ];
+    for (const line of lines) {
+      for (const p of patterns) {
+        const m = line.match(p);
+        if (m) {
+          const text = m[1].trim();
+          // Filter out very short items or obvious non-menu lines
+          if (text.length > 4 && text.length < 200) {
+            items.push(text);
+          }
+          break;
+        }
+      }
+    }
+    return items;
+  }
+
+  function showKeyboard(items, filename) {
+    keyboardLabel.textContent = filename.replace(/\.md$/, '').replace(/_/g, ' ').toUpperCase();
+    keyboardKeys.innerHTML = '';
+
+    items.forEach(item => {
+      const btn = document.createElement('button');
+      btn.className = 'key key-option';
+      btn.textContent = item;
+      btn.addEventListener('click', () => {
+        hideKeyboard();
+        inputEl.value = item;
+        inputEl.dispatchEvent(new Event('input'));
+        send();
+      });
+      keyboardKeys.appendChild(btn);
+    });
+
+    keyboardPanel.hidden = false;
+    // Trigger slide-in on next frame
+    requestAnimationFrame(() => keyboardPanel.classList.add('visible'));
+  }
+
+  function hideKeyboard() {
+    keyboardPanel.classList.remove('visible');
+    keyboardPanel.addEventListener('transitionend', () => {
+      keyboardPanel.hidden = true;
+    }, { once: true });
+  }
+
   // ── FILE MENU ──────────────────────────────────────────────────────────
 
   const fileMenuBtn  = document.getElementById('fileMenuBtn');
@@ -330,6 +403,9 @@
             statusBar.textContent =
               `↑ ${resp.usage.input.toLocaleString()} tokens  ↓ ${resp.usage.output.toLocaleString()} tokens`;
           }
+          // Parse menu items from the file and show keyboard if found
+          const menuItems = parseMenuItems(data.content);
+          if (menuItems.length >= 3) showKeyboard(menuItems, f.name);
         }
       })
       .catch(err => {
