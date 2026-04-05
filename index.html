@@ -245,29 +245,42 @@
   keyboardClose.addEventListener('click', hideKeyboard);
 
   function parseMenuItems(content) {
-    // Extract numbered or bulleted list items from document content.
-    // Looks for lines matching:  * item text  or  1. item text  or  - item text
-    const lines = content.split('\n');
-    const items = [];
-    const patterns = [
-      /^\s*\*\s+(.+)$/,          // * item
-      /^\s*-\s+(.+)$/,           // - item
-      /^\s*\d+[\.\)]\s+(.+)$/,   // 1. item  or  1) item
-    ];
-    for (const line of lines) {
-      for (const p of patterns) {
-        const m = line.match(p);
+    // Strategy 1: look for explicit trigger phrase, grab the list that follows.
+    // Supports: "offer these menu options", "## MENU", "MENU OPTIONS:", etc.
+    const triggerPattern = /offer these menu options|^#+\s*MENU\s*OPTIONS?|^MENU OPTIONS?:/im;
+    const triggerMatch = content.search(triggerPattern);
+
+    if (triggerMatch !== -1) {
+      // Find end of the trigger line, then parse the list immediately following
+      const afterTrigger = content.slice(content.indexOf('\n', triggerMatch) + 1);
+      const items = [];
+      for (const line of afterTrigger.split('\n')) {
+        const m = line.match(/^\s*[\*\-]\s+(.+)$/) || line.match(/^\s*\d+[\.\)]\s+(.+)$/);
         if (m) {
           const text = m[1].trim();
-          // Filter out very short items or obvious non-menu lines
-          if (text.length > 4 && text.length < 200) {
-            items.push(text);
-          }
-          break;
+          if (text.length > 4 && text.length < 200) items.push(text);
+        } else if (items.length > 0 && line.trim() === '') {
+          break; // stop at first blank line after items start
         }
       }
+      if (items.length >= 2) return items;
     }
-    return items;
+
+    // Strategy 2: find the single longest contiguous block of list items.
+    // Used when no explicit trigger is found.
+    const lines = content.split('\n');
+    let bestBlock = [], currentBlock = [];
+    for (const line of lines) {
+      const m = line.match(/^\s*[\*\-]\s+(.+)$/) || line.match(/^\s*\d+[\.\)]\s+(.+)$/);
+      if (m) {
+        const text = m[1].trim();
+        if (text.length > 4 && text.length < 200) { currentBlock.push(text); continue; }
+      }
+      if (currentBlock.length > bestBlock.length) bestBlock = currentBlock;
+      currentBlock = [];
+    }
+    if (currentBlock.length > bestBlock.length) bestBlock = currentBlock;
+    return bestBlock.length >= 3 ? bestBlock : [];
   }
 
   function showKeyboard(items, filename) {
