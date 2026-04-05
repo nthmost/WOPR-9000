@@ -38,6 +38,8 @@ html, body {
   height: 100vh;
   padding: 1.25rem 1.25rem 0;
   gap: 0.75rem;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .main-area {
@@ -45,9 +47,10 @@ html, body {
   flex: 1;
   min-height: 0;
   width: 100%;
-  max-width: 1140px;
+  max-width: 100%;
   justify-content: center;
   gap: 0.75rem;
+  overflow: hidden;
 }
 
 /* ── TERMINAL BEZEL ── */
@@ -343,7 +346,7 @@ html, body {
 }
 
 .shell.sidebar-open .input-row {
-  max-width: 1140px;
+  max-width: calc(820px + 0.75rem + 260px);
 }
 
 .input-wrap {
@@ -460,7 +463,7 @@ html, body {
 }
 
 .shell.sidebar-open .status-bar {
-  max-width: 1140px;
+  max-width: calc(820px + 0.75rem + 260px);
 }
   font-family: var(--font-term);
   font-size: 1rem;
@@ -486,7 +489,7 @@ html, body {
 }
 
 .sidebar.visible {
-  width: 260px;
+  width: min(260px, 30vw);
   background: #0e0618;
   border: 2.5px solid #3a1a4a;
   box-shadow: -4px 0 0 var(--accent-dark);
