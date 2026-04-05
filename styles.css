@@ -34,7 +34,6 @@ html, body {
 .shell {
   display: flex;
   flex-direction: column;
-  align-items: center;
   height: 100vh;
   padding: 1.25rem 1.25rem 0;
   gap: 0.75rem;
@@ -47,10 +46,14 @@ html, body {
   flex: 1;
   min-height: 0;
   width: 100%;
-  max-width: 100%;
-  justify-content: center;
+  max-width: 820px;
+  margin: 0 auto;
   gap: 0.75rem;
-  overflow: hidden;
+  transition: max-width 0.3s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+.shell.sidebar-open .main-area {
+  max-width: calc(820px + 0.75rem + 260px);
 }
 
 /* ── TERMINAL BEZEL ── */
@@ -339,6 +342,7 @@ html, body {
 .input-row {
   width: 100%;
   max-width: 820px;
+  margin: 0 auto;
   display: flex;
   gap: 0.6rem;
   align-items: flex-end;
@@ -458,6 +462,7 @@ html, body {
 .status-bar {
   width: 100%;
   max-width: 820px;
+  margin: 0 auto;
   padding-bottom: 0.5rem;
   transition: max-width 0.3s cubic-bezier(0.34, 1.2, 0.64, 1);
 }
@@ -502,7 +507,8 @@ html, body {
   padding: 0.75rem 0.85rem 0.6rem;
   border-bottom: 1px solid #2a1a3a;
   flex-shrink: 0;
-  min-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .sidebar-label {
@@ -511,16 +517,18 @@ html, body {
   color: var(--phosphor-dim);
   letter-spacing: 0.12em;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar-keys {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0.75rem 0.7rem;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  min-width: 260px;
   scrollbar-width: thin;
   scrollbar-color: #3a1a4a transparent;
 }
