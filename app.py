@@ -9,23 +9,44 @@ Shall we play a game?
 
 import os
 import json
+import hashlib
+import urllib.request
+import urllib.parse
 from pathlib import Path
-from flask import Flask, request, jsonify, send_from_directory
+from functools import wraps
+from flask import Flask, request, jsonify, session, redirect, url_for, render_template, Response
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
 
-app = Flask(__name__, static_folder='.')
-client = Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'])
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'change-this-in-production-wopr9000')
 
 # ── Configuration ──────────────────────────────────────────────────────────
 
-DOCS_DIR   = Path(os.environ.get('DOCS_DIR', './docs'))
-MODEL      = os.environ.get('WOPR_MODEL', 'claude-sonnet-4-6')
-MAX_TOKENS = int(os.environ.get('WOPR_MAX_TOKENS', '8192'))
-TITLE      = os.environ.get('WOPR_TITLE', 'WOPR-9000 // DOCUMENT INTERFACE')
-PORT       = int(os.environ.get('PORT', '8090'))
+DOCS_DIR      = Path(os.environ.get('DOCS_DIR', './docs'))
+MODEL         = os.environ.get('WOPR_MODEL', 'claude-sonnet-4-6')
+MAX_TOKENS    = int(os.environ.get('WOPR_MAX_TOKENS', '16000'))
+TITLE         = os.environ.get('WOPR_TITLE', 'WOPR-9000 // DOCUMENT INTERFACE')
+PORT          = int(os.environ.get('PORT', '8090'))
+REQUIRE_AUTH  = os.environ.get('REQUIRE_AUTH', 'false').lower() in ('true', '1', 'yes')
+MEDIAWIKI_URL = os.environ.get('MEDIAWIKI_URL', '')
+
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+
+# Parse AUTH_USERS: "user1:sha256hash,user2:sha256hash"
+def _parse_users():
+    raw = os.environ.get('AUTH_USERS', '')
+    users = {}
+    for entry in raw.split(','):
+        entry = entry.strip()
+        if ':' in entry:
+            u, h = entry.split(':', 1)
+            users[u.strip()] = h.strip()
+    return users
+
+USERS = _parse_users()
 
 # ── Document Loading ────────────────────────────────────────────────────────
 
@@ -35,16 +56,13 @@ def load_documents():
     if not DOCS_DIR.exists():
         print(f"Warning: DOCS_DIR {DOCS_DIR} does not exist")
         return docs
-
     for ext in ('*.md', '*.txt'):
         for f in sorted(DOCS_DIR.rglob(ext)):
-            # Use path relative to DOCS_DIR as key
             key = str(f.relative_to(DOCS_DIR))
             try:
                 docs[key] = f.read_text(encoding='utf-8')
             except Exception as e:
                 print(f"Could not read {f}: {e}")
-
     return docs
 
 
@@ -55,8 +73,6 @@ def build_system_prompt(docs):
     2. All other documents appended as context
     """
     parts = []
-
-    # Check for custom system prompt file
     system_file = DOCS_DIR / 'SYSTEM_PROMPT.md'
     if system_file.exists():
         parts.append(system_file.read_text(encoding='utf-8').strip())
@@ -68,17 +84,14 @@ def build_system_prompt(docs):
             "Be as detailed as the question warrants. Do not artificially truncate responses."
         )
         parts.append('\n\n---\n\n# DOCUMENTS\n')
-
-    # Append all docs except SYSTEM_PROMPT.md
     for name, content in docs.items():
         if name == 'SYSTEM_PROMPT.md':
             continue
         parts.append(f"\n## {name}\n\n{content}\n")
-
     return '\n'.join(parts)
 
 
-def reload():
+def _reload():
     global DOCUMENTS, SYSTEM_PROMPT
     DOCUMENTS = load_documents()
     SYSTEM_PROMPT = build_system_prompt(DOCUMENTS)
@@ -89,49 +102,165 @@ def reload():
 
 DOCUMENTS = {}
 SYSTEM_PROMPT = ''
-reload()
+_reload()
+
+# ── Auth ────────────────────────────────────────────────────────────────────
+
+def check_local_password(username, password):
+    expected = USERS.get(username)
+    if not expected:
+        return False
+    return hashlib.sha256(password.encode()).hexdigest() == expected
+
+
+def check_wiki_password(username, password):
+    if not MEDIAWIKI_URL:
+        return False
+    try:
+        req = urllib.request.Request(
+            MEDIAWIKI_URL + '?' + urllib.parse.urlencode({
+                'action': 'query', 'meta': 'tokens', 'type': 'login', 'format': 'json'
+            }),
+            headers={'User-Agent': 'wopr9000-login/1.0'}
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read())
+        token = data['query']['tokens']['logintoken']
+        payload = urllib.parse.urlencode({
+            'action': 'login', 'lgname': username,
+            'lgpassword': password, 'lgtoken': token, 'format': 'json',
+        }).encode()
+        req2 = urllib.request.Request(
+            MEDIAWIKI_URL, data=payload,
+            headers={'User-Agent': 'wopr9000-login/1.0',
+                     'Content-Type': 'application/x-www-form-urlencoded'}
+        )
+        with urllib.request.urlopen(req2, timeout=8) as r:
+            result = json.loads(r.read())
+        return result.get('login', {}).get('result') == 'Success'
+    except Exception:
+        return False
+
+
+def auth_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if REQUIRE_AUTH and not session.get('authenticated'):
+            if request.is_json or request.path.startswith('/chat'):
+                return jsonify({'error': 'Unauthorized'}), 401
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
 
 # ── Routes ──────────────────────────────────────────────────────────────────
 
-@app.route('/')
-def index():
-    return send_from_directory('.', 'index.html')
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if not REQUIRE_AUTH:
+        return redirect(url_for('index'))
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        auth_type = request.form.get('auth_type', 'local')
+        if auth_type == 'wiki' and MEDIAWIKI_URL:
+            if check_wiki_password(username, password):
+                session['authenticated'] = True
+                session['username'] = username + ' (wiki)'
+                return redirect(url_for('index'))
+            error = 'Wiki login failed.'
+        else:
+            if check_local_password(username, password):
+                session['authenticated'] = True
+                session['username'] = username
+                return redirect(url_for('index'))
+            error = 'Bad command or file name.'
+    return render_template('login.html', error=error, mediawiki_url=MEDIAWIKI_URL)
 
-@app.route('/styles.css')
-def styles():
-    return send_from_directory('.', 'styles.css')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login') if REQUIRE_AUTH else url_for('index'))
+
+
+@app.route('/')
+@auth_required
+def index():
+    username = session.get('username', '') if REQUIRE_AUTH else ''
+    return render_template('index.html', title=TITLE, username=username,
+                           require_auth=REQUIRE_AUTH)
+
 
 @app.route('/config')
 def config():
-    """Return UI configuration."""
     return jsonify({'title': TITLE})
 
+
 @app.route('/chat', methods=['POST'])
+@auth_required
 def chat():
     data = request.get_json()
     messages = data.get('messages', [])
-
     if not messages:
         return jsonify({'error': 'No messages provided'}), 400
+    if not ANTHROPIC_API_KEY:
+        return jsonify({'error': 'ANTHROPIC_API_KEY not set'}), 500
 
-    try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT,
-            messages=messages,
-        )
-        return jsonify({
-            'content': response.content[0].text,
-            'usage': {
-                'input': response.usage.input_tokens,
-                'output': response.usage.output_tokens,
-            }
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    client = Anthropic(api_key=ANTHROPIC_API_KEY)
+
+    def generate():
+        try:
+            input_tokens = 0
+            output_tokens = 0
+            with client.messages.stream(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                thinking={'type': 'enabled', 'budget_tokens': 8000},
+                system=SYSTEM_PROMPT,
+                messages=messages,
+            ) as stream:
+                thinking_active = False
+                for event in stream:
+                    etype = getattr(event, 'type', None)
+
+                    if etype == 'message_start':
+                        usage = getattr(getattr(event, 'message', None), 'usage', None)
+                        if usage:
+                            input_tokens = getattr(usage, 'input_tokens', 0)
+
+                    elif etype == 'message_delta':
+                        usage = getattr(event, 'usage', None)
+                        if usage:
+                            output_tokens = getattr(usage, 'output_tokens', 0)
+
+                    elif etype == 'content_block_start':
+                        btype = getattr(getattr(event, 'content_block', None), 'type', None)
+                        if btype == 'thinking':
+                            thinking_active = True
+                            yield f"data: {json.dumps({'thinking_start': True})}\n\n"
+                        elif btype == 'text' and thinking_active:
+                            thinking_active = False
+                            yield f"data: {json.dumps({'thinking_end': True})}\n\n"
+
+                    elif etype == 'content_block_delta':
+                        delta = getattr(event, 'delta', None)
+                        if delta and getattr(delta, 'type', None) == 'text_delta':
+                            yield f"data: {json.dumps({'text': delta.text})}\n\n"
+
+            yield f"data: {json.dumps({'done': True, 'usage': {'input': input_tokens, 'output': output_tokens}})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
+
 
 @app.route('/files')
+@auth_required
 def list_files():
     """Return list of files available for direct viewing.
     Only shows files inside docs/FILES/ — everything else under docs/
@@ -143,14 +272,12 @@ def list_files():
     files = []
     for ext in ('*.md', '*.txt'):
         for f in sorted(files_dir.glob(ext)):
-            files.append({
-                'name': f.name,
-                'path': str(f.relative_to(DOCS_DIR)),
-            })
+            files.append({'name': f.name, 'path': str(f.relative_to(DOCS_DIR))})
     return jsonify(files)
 
 
 @app.route('/file', methods=['POST'])
+@auth_required
 def get_file():
     """Return the content of a specific file."""
     data = request.get_json()
@@ -164,10 +291,12 @@ def get_file():
 
 
 @app.route('/reload', methods=['POST'])
+@auth_required
 def reload_route():
     """Hot-reload documents without restarting."""
-    doc_count = reload()
+    doc_count = _reload()
     return jsonify({'status': 'ok', 'documents': doc_count})
+
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=PORT, debug=False)

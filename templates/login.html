@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Login</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+<style>
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  .login-screen {
+    width: 520px;
+    padding: 32px 40px 28px;
+    text-shadow: none;
+  }
+
+  .login-logo {
+    text-align: center;
+    margin-bottom: 28px;
+    white-space: pre;
+    font-size: 20px;
+    line-height: 1.25;
+    color: var(--green);
+  }
+  .login-logo .bright { font-size: 26px; letter-spacing: 4px; }
+
+  .login-section { margin-bottom: 8px; color: var(--dim); letter-spacing: 1px; }
+
+  .field-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+    gap: 0;
+  }
+  .field-row label { width: 140px; flex-shrink: 0; color: var(--green); }
+  .field-row input {
+    background: transparent;
+    color: var(--green);
+    border: none;
+    border-bottom: 1px solid var(--dim);
+    font-family: inherit;
+    font-size: inherit;
+    padding: 2px 6px;
+    flex: 1;
+    outline: none;
+    caret-color: var(--green);
+  }
+  .field-row input:focus { border-bottom-color: var(--green); }
+
+  .btn-row { margin-top: 14px; display: flex; justify-content: flex-end; }
+
+  .login-btn {
+    background: transparent;
+    color: var(--green);
+    border: 1px solid var(--green);
+    font-family: inherit;
+    font-size: inherit;
+    padding: 2px 20px;
+    cursor: pointer;
+    letter-spacing: 2px;
+  }
+  .login-btn:hover { background: var(--green); color: var(--bg); }
+
+  .wiki-btn { border-color: var(--dim); color: var(--dim); }
+  .wiki-btn:hover { border-color: var(--green); color: var(--bg); background: var(--dim); }
+
+  .login-divider { border: none; border-top: 1px solid var(--dim); margin: 22px 0; }
+
+  .login-error {
+    color: var(--green);
+    text-align: center;
+    margin-top: 16px;
+    letter-spacing: 1px;
+    animation: flicker 0.15s infinite alternate;
+  }
+  @keyframes flicker { from { opacity: 1; } to { opacity: 0.85; } }
+
+  .login-note { color: var(--dim); font-size: 0.8em; margin-top: 4px; text-align: right; }
+
+  .login-cursor {
+    display: inline-block;
+    width: 12px;
+    height: 1.1em;
+    background: var(--green);
+    vertical-align: text-bottom;
+    animation: blink 1s step-end infinite;
+  }
+
+  /* Win311 login overrides */
+  body[data-theme="win311"] .login-screen {
+    background: #c0c0c0;
+    border-top:    2px solid #fff;
+    border-left:   2px solid #fff;
+    border-right:  2px solid #404040;
+    border-bottom: 2px solid #404040;
+    box-shadow: 3px 3px 0 #000;
+    padding: 0;
+  }
+  body[data-theme="win311"] .login-titlebar {
+    background: #000080;
+    color: #fff;
+    font-weight: bold;
+    padding: 3px 6px;
+    font-size: 12px;
+  }
+  body[data-theme="win311"] .login-body { padding: 20px 24px 18px; }
+  body[data-theme="win311"] .login-logo { color: #000080; font-size: 14px; }
+  body[data-theme="win311"] .login-logo .bright { font-size: 14px; letter-spacing: 0; }
+  body[data-theme="win311"] .login-section { color: #404040; font-family: inherit; letter-spacing: 0; font-size: 11px; font-weight: bold; }
+  body[data-theme="win311"] .field-row label { color: #000; font-family: inherit; font-size: 12px; }
+  body[data-theme="win311"] .field-row input {
+    background: #fff;
+    color: #000;
+    border: none;
+    border-top:    1px solid #808080;
+    border-left:   1px solid #808080;
+    border-right:  1px solid #fff;
+    border-bottom: 1px solid #fff;
+    padding: 2px 4px;
+    font-family: inherit;
+    font-size: 12px;
+    caret-color: #000;
+  }
+  body[data-theme="win311"] .login-btn {
+    background: #c0c0c0;
+    color: #000;
+    border-top:    2px solid #fff;
+    border-left:   2px solid #fff;
+    border-right:  2px solid #404040;
+    border-bottom: 2px solid #404040;
+    font-family: inherit;
+    font-size: 12px;
+    letter-spacing: 0;
+    padding: 3px 20px;
+  }
+  body[data-theme="win311"] .login-btn:hover { background: #d8d8d8; color: #000; }
+  body[data-theme="win311"] .wiki-btn { color: #404040; }
+  body[data-theme="win311"] .login-divider { border-color: #808080; }
+  body[data-theme="win311"] .login-error { color: #800000; animation: none; }
+  body[data-theme="win311"] .login-note { color: #808080; font-size: 11px; }
+  body[data-theme="win311"] .login-cursor { background: #000; }
+
+  /* WOPR9000 login overrides */
+  body[data-theme="wopr9000"] .login-screen {
+    background: #1a0a1e;
+    border: 2.5px solid #3a1a4a;
+    border-radius: 12px;
+    box-shadow: 6px 6px 0 #e91e63;
+    padding: 28px 36px 24px;
+    font-family: 'VT323', monospace;
+  }
+  body[data-theme="wopr9000"] .login-logo { color: #f0c8dc; font-size: 22px; }
+  body[data-theme="wopr9000"] .login-logo .bright { font-size: 28px; color: #e91e63; text-shadow: 0 0 8px #e91e63; }
+  body[data-theme="wopr9000"] .login-section { color: #9a5a78; font-family: 'VT323', monospace; font-size: 1.1rem; }
+  body[data-theme="wopr9000"] .field-row label { color: #f0c8dc; font-family: 'VT323', monospace; font-size: 1.1rem; }
+  body[data-theme="wopr9000"] .field-row input {
+    color: #e91e63;
+    font-family: 'VT323', monospace;
+    font-size: 1.1rem;
+    border-bottom-color: #3a1a4a;
+    caret-color: #e91e63;
+  }
+  body[data-theme="wopr9000"] .field-row input:focus { border-bottom-color: #e91e63; }
+  body[data-theme="wopr9000"] .login-btn {
+    font-family: 'VT323', monospace;
+    font-size: 1.1rem;
+    letter-spacing: 0.1em;
+    color: #e91e63;
+    border-color: #e91e63;
+  }
+  body[data-theme="wopr9000"] .login-btn:hover { background: #e91e63; color: #1a0a1e; }
+  body[data-theme="wopr9000"] .wiki-btn { color: #9a5a78; border-color: #3a1a4a; }
+  body[data-theme="wopr9000"] .wiki-btn:hover { background: #9a5a78; color: #1a0a1e; border-color: #9a5a78; }
+  body[data-theme="wopr9000"] .login-divider { border-color: #3a1a4a; }
+  body[data-theme="wopr9000"] .login-error { color: #ff5f56; }
+  body[data-theme="wopr9000"] .login-note { color: #9a5a78; }
+  body[data-theme="wopr9000"] .login-cursor { background: #e91e63; box-shadow: 0 0 6px #e91e63; }
+</style>
+<script>
+  (function() {
+    var t = localStorage.getItem('wopr-theme') || 'apple2';
+    document.documentElement.dataset.pendingTheme = t;
+  })();
+</script>
+</head>
+<body data-theme="apple2">
+<script>
+  var pt = document.documentElement.dataset.pendingTheme;
+  if (pt) document.body.dataset.theme = pt;
+</script>
+
+<div class="login-screen">
+  <div class="login-titlebar" style="display:none" id="win-titlebar">WOPR-9000 — Login</div>
+  <div class="login-body" id="login-body">
+    <div class="login-logo">
+<span class="bright">WOPR-9000</span>
+    DOCUMENT INTERFACE
+  </div>
+
+    <div class="login-section">] LOCAL LOGIN</div>
+    <form method="POST" action="/login">
+      <input type="hidden" name="auth_type" value="local">
+      <div class="field-row">
+        <label>USERNAME: </label>
+        <input type="text" name="username" autofocus autocomplete="username" spellcheck="false">
+      </div>
+      <div class="field-row">
+        <label>PASSWORD: </label>
+        <input type="password" name="password" autocomplete="current-password">
+      </div>
+      <div class="btn-row">
+        <button type="submit" class="login-btn">[ RUN ]</button>
+      </div>
+    </form>
+
+    {% if mediawiki_url %}
+    <hr class="login-divider">
+    <div class="login-section">] WIKI LOGIN</div>
+    <form method="POST" action="/login">
+      <input type="hidden" name="auth_type" value="wiki">
+      <div class="field-row">
+        <label>WIKI USER: </label>
+        <input type="text" name="username" autocomplete="username" spellcheck="false">
+      </div>
+      <div class="field-row">
+        <label>PASSWORD: </label>
+        <input type="password" name="password" autocomplete="current-password">
+      </div>
+      <div class="btn-row">
+        <button type="submit" class="login-btn wiki-btn">[ RUN ]</button>
+      </div>
+    </form>
+    <div class="login-note">{{ mediawiki_url }}</div>
+    {% endif %}
+
+    {% if error %}
+    <div class="login-error">** {{ error }} **<span class="login-cursor"></span></div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  var theme = document.body.dataset.theme;
+  if (theme === 'win311') {
+    document.getElementById('win-titlebar').style.display = '';
+  }
+</script>
+</body>
+</html>

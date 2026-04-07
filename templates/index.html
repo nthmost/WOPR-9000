@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body data-theme="apple2">
+
+<div id="shell">
+
+  <div id="header">
+    <div id="header-left">
+      <span id="header-title">{{ title }}</span>
+      <div id="theme-switcher">
+        <span>THEME:</span>
+        <button class="theme-btn active" id="btn-apple2"  onclick="setTheme('apple2')">A2E</button>
+        <button class="theme-btn"        id="btn-win311"  onclick="setTheme('win311')">WIN311</button>
+        <button class="theme-btn"        id="btn-wopr9000" onclick="setTheme('wopr9000')">WOPR</button>
+      </div>
+    </div>
+    <div id="header-right">
+      {% if username %}<span class="user-tag">{{ username }}</span>{% endif %}
+      {% if require_auth %}<a class="logout" href="/logout">] LOGOUT</a>{% endif %}
+    </div>
+  </div>
+
+  <div id="body">
+
+    <div id="sidebar">
+      <div class="sb-section" id="files-section">
+        <div class="sb-section-inner">
+          <span class="sb-label">FILES</span>
+          <div id="files-list"><span class="sb-empty">loading...</span></div>
+        </div>
+      </div>
+      <div class="sb-section" id="menu-section">
+        <div class="sb-section-inner">
+          <span class="sb-label">MENU</span>
+          <div id="menu-list"><span class="sb-empty">open a file to see options</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="chat">
+      <div id="conversation" role="log" aria-live="polite"></div>
+      <div id="input-bar">
+        <span id="prompt-label">]</span>
+        <input type="text"
+               id="user-input"
+               placeholder="ask anything..."
+               autocomplete="off"
+               spellcheck="true"
+               autofocus
+               aria-label="Message input">
+        <button id="send-btn">RUN</button>
+        <button id="clear-btn">CLR</button>
+        <button id="stop-btn" style="display:none">&#9632; STOP</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="status-bar">
+    <span id="status-left">READY</span>
+    <span id="status-right"></span>
+  </div>
+
+</div>
+
+<script>
+(function() {
+
+// ── Theme ──────────────────────────────────────────────────────────────────
+
+function setTheme(name) {
+  document.body.dataset.theme = name;
+  localStorage.setItem('wopr-theme', name);
+
+  document.getElementById('btn-apple2').classList.toggle('active',   name === 'apple2');
+  document.getElementById('btn-win311').classList.toggle('active',   name === 'win311');
+  document.getElementById('btn-wopr9000').classList.toggle('active', name === 'wopr9000');
+
+  const isWin  = name === 'win311';
+  const isWopr = name === 'wopr9000';
+
+  document.getElementById('prompt-label').textContent = isWin ? '>' : ']';
+  document.getElementById('send-btn').textContent     = isWin ? 'OK' : 'RUN';
+  document.getElementById('clear-btn').textContent    = isWin ? 'Clear' : 'CLR';
+  setStatus(isWin ? 'Ready' : 'READY');
+}
+
+window.setTheme = setTheme;
+
+function initTheme() {
+  const saved = localStorage.getItem('wopr-theme') || 'apple2';
+  setTheme(saved);
+}
+
+// ── Markdown ───────────────────────────────────────────────────────────────
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderMarkdown(text) {
+  const codeBlocks = [];
+  text = text.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) => {
+    codeBlocks.push('<pre><code>' + escHtml(code.trim()) + '</code></pre>');
+    return '\x00CODE' + (codeBlocks.length - 1) + '\x00';
+  });
+  text = text.replace(/`([^`\n]+)`/g, (_, c) => '<code>' + escHtml(c) + '</code>');
+  text = escHtml(text);
+  text = text.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeBlocks[parseInt(i)]);
+  text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  text = text.replace(/^## (.+)$/gm,  '<h2>$1</h2>');
+  text = text.replace(/^# (.+)$/gm,   '<h1>$1</h1>');
+  text = text.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*([^*\n]+)\*/g,     '<em>$1</em>');
+  text = text.replace(/^---+$/gm, '<hr>');
+  text = text.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
+  text = text.replace(/^[*\-] (.+)$/gm, '<li>$1</li>');
+  text = text.replace(/(<\/li>)\n\n+(<li>)/g, '$1\n$2');
+  text = text.replace(/(<li>.*<\/li>\n?)+/g, m => '<ul>' + m + '</ul>');
+  text = text.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+  text = text.replace(/\n\n/g, '</p><p>');
+  text = text.replace(/\n/g, '<br>');
+  text = '<p>' + text + '</p>';
+  text = text.replace(/<p>(<(?:h[123]|ul|ol|hr|blockquote|pre)>)/g, '$1');
+  text = text.replace(/(<\/(?:h[123]|ul|ol|blockquote|pre)>)<\/p>/g, '$1');
+  return text;
+}
+
+// ── Chat state ─────────────────────────────────────────────────────────────
+
+const conv      = document.getElementById('conversation');
+const input     = document.getElementById('user-input');
+const sendBtn   = document.getElementById('send-btn');
+const clearBtn  = document.getElementById('clear-btn');
+const stopBtn   = document.getElementById('stop-btn');
+const statusLeft  = document.getElementById('status-left');
+const statusRight = document.getElementById('status-right');
+
+let messages     = [];
+let busy         = false;
+let currentAbort = null;
+let pinnedToBottom = true;
+
+conv.addEventListener('scroll', () => {
+  pinnedToBottom = conv.scrollHeight - conv.scrollTop - conv.clientHeight < 60;
+});
+function scrollBottom()      { if (pinnedToBottom) conv.scrollTop = conv.scrollHeight; }
+function forceScrollBottom() { pinnedToBottom = true; conv.scrollTop = conv.scrollHeight; }
+function setStatus(s)        { statusLeft.textContent = s; }
+
+function labelText(role) {
+  const isWin = document.body.dataset.theme === 'win311';
+  if (role === 'user') return isWin ? 'You:' : '] YOU';
+  return isWin ? 'Claude:' : '] CLAUDE';
+}
+
+function appendMsg(role, content, streaming) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg';
+  const label = document.createElement('div');
+  label.className = 'msg-label' + (role === 'user' ? ' user-label' : '');
+  label.textContent = labelText(role);
+  wrap.appendChild(label);
+  const body = document.createElement('div');
+  body.className = 'msg-body' + (role === 'user' ? ' user-body' : '');
+  body.innerHTML = streaming
+    ? '<span class="cursor"></span>'
+    : (role === 'user' ? escHtml(content) : renderMarkdown(content));
+  wrap.appendChild(body);
+  conv.appendChild(wrap);
+  scrollBottom();
+  return body;
+}
+
+function appendError(msg) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg';
+  const label = document.createElement('div');
+  label.className = 'msg-label';
+  label.textContent = document.body.dataset.theme === 'win311' ? 'Error:' : '] ERROR';
+  wrap.appendChild(label);
+  const body = document.createElement('div');
+  body.className = 'msg-body error-body';
+  body.textContent = msg;
+  wrap.appendChild(body);
+  conv.appendChild(wrap);
+  scrollBottom();
+}
+
+// ── Streaming ──────────────────────────────────────────────────────────────
+
+async function streamResponse(msgList, assistantBody) {
+  let accumulated = '';
+  currentAbort = new AbortController();
+  stopBtn.style.display = '';
+  const resp = await fetch('/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages: msgList }),
+    signal: currentAbort.signal,
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: resp.statusText }));
+    assistantBody.classList.add('error-body');
+    assistantBody.innerHTML = escHtml(err.error || 'Unknown error');
+    stopBtn.style.display = 'none';
+    return null;
+  }
+  const reader = resp.body.getReader();
+  const dec    = new TextDecoder();
+  let buf      = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = JSON.parse(line.slice(6));
+      if (payload.done) {
+        if (payload.usage) {
+          statusRight.textContent =
+            `↑ ${payload.usage.input.toLocaleString()} tokens  ↓ ${payload.usage.output.toLocaleString()} tokens`;
+        }
+        break;
+      }
+      if (payload.error) {
+        assistantBody.classList.add('error-body');
+        assistantBody.innerHTML = escHtml(payload.error);
+        return null;
+      }
+      if (payload.thinking_start) {
+        const isWin = document.body.dataset.theme === 'win311';
+        assistantBody.innerHTML = `<span class="thinking-indicator">${isWin ? 'thinking...' : 'THINKING...'}</span><span class="cursor"></span>`;
+        scrollBottom();
+      }
+      if (payload.thinking_end) {
+        assistantBody.innerHTML = '<span class="cursor"></span>';
+      }
+      if (payload.text) {
+        accumulated += payload.text;
+        assistantBody.innerHTML = renderMarkdown(accumulated) + '<span class="cursor"></span>';
+        scrollBottom();
+      }
+    }
+  }
+  stopBtn.style.display = 'none';
+  currentAbort = null;
+  assistantBody.innerHTML = renderMarkdown(accumulated);
+  return accumulated;
+}
+
+function stopGeneration() {
+  if (currentAbort) { currentAbort.abort(); currentAbort = null; }
+}
+
+// ── Send message ───────────────────────────────────────────────────────────
+
+async function sendMessage(text) {
+  if (!text || busy) return;
+  busy = true;
+  sendBtn.disabled = true;
+  input.disabled   = true;
+  const isWin = document.body.dataset.theme === 'win311';
+  setStatus(isWin ? 'Working...' : 'RUNNING...');
+  messages.push({ role: 'user', content: text });
+  appendMsg('user', text);
+  input.value = '';
+  forceScrollBottom();
+  const assistantBody = appendMsg('assistant', '', true);
+  try {
+    const result = await streamResponse(messages, assistantBody);
+    if (result !== null) messages.push({ role: 'assistant', content: result });
+    else messages.pop();
+    setStatus(isWin ? 'Ready' : 'READY');
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      const last = conv.querySelector('.msg:last-child .msg-body');
+      if (last) last.innerHTML += '<span style="opacity:0.4;font-size:0.85em"> [stopped]</span>';
+      messages.pop();
+      setStatus(isWin ? 'Stopped' : 'STOPPED');
+    } else {
+      appendError((isWin ? '' : 'I/O ERROR: ') + e.message);
+      messages.pop();
+      setStatus('ERROR');
+    }
+  } finally {
+    busy = false;
+    stopBtn.style.display = 'none';
+    sendBtn.disabled = false;
+    input.disabled   = false;
+    input.focus();
+  }
+}
+
+function sendMenuChoice(btn) {
+  document.querySelectorAll('.menu-item').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  sendMessage(btn.textContent.trim());
+}
+
+function clearConversation() {
+  messages = [];
+  conv.innerHTML = '';
+  statusRight.textContent = '';
+  setStatus(document.body.dataset.theme === 'win311' ? 'Ready' : 'READY');
+  input.focus();
+}
+
+// ── File browser ───────────────────────────────────────────────────────────
+
+function parseMenuItems(content) {
+  // Look for explicit trigger phrase, then fall back to largest list block
+  const triggerPattern = /offer these menu options|^#+\s*MENU\s*OPTIONS?|^MENU OPTIONS?:/im;
+  const triggerMatch = content.search(triggerPattern);
+
+  if (triggerMatch !== -1) {
+    const afterTrigger = content.slice(content.indexOf('\n', triggerMatch) + 1);
+    const items = [];
+    for (const line of afterTrigger.split('\n')) {
+      const m = line.match(/^\s*[\*\-]\s+(.+)$/) || line.match(/^\s*\d+[\.\)]\s+(.+)$/);
+      if (m) {
+        const text = m[1].trim();
+        if (text.length > 4 && text.length < 200) items.push(text);
+      } else if (items.length > 0 && line.trim() === '') {
+        break;
+      }
+    }
+    if (items.length >= 2) return items;
+  }
+
+  const lines = content.split('\n');
+  let bestBlock = [], currentBlock = [];
+  for (const line of lines) {
+    const m = line.match(/^\s*[\*\-]\s+(.+)$/) || line.match(/^\s*\d+[\.\)]\s+(.+)$/);
+    if (m) {
+      const text = m[1].trim();
+      if (text.length > 4 && text.length < 200) { currentBlock.push(text); continue; }
+    }
+    if (currentBlock.length > bestBlock.length) bestBlock = currentBlock;
+    currentBlock = [];
+  }
+  if (currentBlock.length > bestBlock.length) bestBlock = currentBlock;
+  return bestBlock.length >= 3 ? bestBlock : [];
+}
+
+function renderMenuItems(items) {
+  const menuList = document.getElementById('menu-list');
+  if (!items.length) {
+    menuList.innerHTML = '<span class="sb-empty">no menu found</span>';
+    return;
+  }
+  menuList.innerHTML = '';
+  items.forEach(item => {
+    const btn = document.createElement('button');
+    btn.className = 'menu-item';
+    btn.textContent = item;
+    btn.addEventListener('click', () => sendMenuChoice(btn));
+    menuList.appendChild(btn);
+  });
+}
+
+function loadFiles() {
+  const filesList = document.getElementById('files-list');
+  fetch('/files')
+    .then(r => r.json())
+    .then(files => {
+      if (!files.length) {
+        filesList.innerHTML = '<span class="sb-empty">no files in docs/FILES/</span>';
+        return;
+      }
+      filesList.innerHTML = '';
+      files.forEach(f => {
+        const btn = document.createElement('button');
+        btn.className = 'file-item';
+        btn.textContent = f.name;
+        btn.title = f.path;
+        btn.addEventListener('click', () => openFile(f));
+        filesList.appendChild(btn);
+      });
+    })
+    .catch(() => {
+      filesList.innerHTML = '<span class="sb-empty">error loading files</span>';
+    });
+}
+
+async function openFile(f) {
+  const isWin = document.body.dataset.theme === 'win311';
+  // Fetch file content
+  let data;
+  try {
+    const resp = await fetch('/file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: f.path }),
+    });
+    data = await resp.json();
+  } catch (err) {
+    appendError('⚠ ' + err.message);
+    return;
+  }
+  if (data.error) { appendError('⚠ ' + data.error); return; }
+
+  // Inject file as user message and send
+  const userMsg = `[FILE: ${f.name}]\n\n${data.content}`;
+  messages.push({ role: 'user', content: userMsg });
+
+  // Show load header in conversation
+  const header = document.createElement('div');
+  header.className = 'msg';
+  const headerLabel = document.createElement('div');
+  headerLabel.className = 'msg-label';
+  headerLabel.textContent = isWin ? 'File:' : '] FILE';
+  header.appendChild(headerLabel);
+  const headerBody = document.createElement('div');
+  headerBody.className = 'msg-body';
+  headerBody.style.opacity = '0.5';
+  headerBody.textContent = `── ${f.name} ──`;
+  header.appendChild(headerBody);
+  conv.appendChild(header);
+  forceScrollBottom();
+
+  busy = true;
+  sendBtn.disabled = true;
+  input.disabled   = true;
+  setStatus(isWin ? 'Loading file...' : 'LOADING FILE...');
+  const assistantBody = appendMsg('assistant', '', true);
+
+  try {
+    const result = await streamResponse(messages, assistantBody);
+    if (result !== null) {
+      messages.push({ role: 'assistant', content: result });
+      // Extract menu items from the file content and show in sidebar
+      const menuItems = parseMenuItems(data.content);
+      renderMenuItems(menuItems);
+    } else {
+      messages.pop();
+    }
+    setStatus(isWin ? 'Ready' : 'READY');
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      const last = conv.querySelector('.msg:last-child .msg-body');
+      if (last) last.innerHTML += '<span style="opacity:0.4;font-size:0.85em"> [stopped]</span>';
+      messages.pop();
+      setStatus(isWin ? 'Stopped' : 'STOPPED');
+    } else {
+      appendError((isWin ? '' : 'I/O ERROR: ') + e.message);
+      messages.pop();
+      setStatus('ERROR');
+    }
+  } finally {
+    busy = false;
+    stopBtn.style.display = 'none';
+    sendBtn.disabled = false;
+    input.disabled   = false;
+    input.focus();
+  }
+}
+
+// ── Event listeners ────────────────────────────────────────────────────────
+
+sendBtn.addEventListener('click', () => {
+  const text = input.value.trim();
+  if (!text) return;
+  if (text.toUpperCase() === 'CLEAR') { clearConversation(); input.value = ''; return; }
+  sendMessage(text);
+});
+clearBtn.addEventListener('click', clearConversation);
+stopBtn.addEventListener('click', stopGeneration);
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (text.toUpperCase() === 'CLEAR') { clearConversation(); input.value = ''; return; }
+    sendMessage(text);
+  }
+});
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+
+window.addEventListener('DOMContentLoaded', () => {
+  initTheme();
+  loadFiles();
+  // Show boot message
+  const isWopr = document.body.dataset.theme === 'wopr9000';
+  const wrap  = document.createElement('div');
+  wrap.className = 'msg';
+  const body  = document.createElement('div');
+  body.className = 'msg-body';
+  body.style.opacity = '0.5';
+  body.innerHTML = isWopr
+    ? 'WOPR-9000 DOCUMENT INTERFACE<br>SHALL WE PLAY A GAME?'
+    : 'Document interface ready. Ask anything or open a file from the sidebar.';
+  wrap.appendChild(body);
+  conv.appendChild(wrap);
+});
+
+})();
+</script>
+</body>
+</html>
