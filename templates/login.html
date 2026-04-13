@@ -204,7 +204,7 @@
   </div>
 
     <div class="login-section">] LOCAL LOGIN</div>
-    <form method="POST" action="/login">
+    <form method="POST" action="{{ url_for('login') }}">
       <input type="hidden" name="auth_type" value="local">
       <div class="field-row">
         <label>USERNAME: </label>
@@ -222,7 +222,7 @@
     {% if mediawiki_url %}
     <hr class="login-divider">
     <div class="login-section">] WIKI LOGIN</div>
-    <form method="POST" action="/login">
+    <form method="POST" action="{{ url_for('login') }}">
       <input type="hidden" name="auth_type" value="wiki">
       <div class="field-row">
         <label>WIKI USER: </label>
