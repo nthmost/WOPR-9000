@@ -267,6 +267,30 @@ function stopGeneration() {
 
 // ── Send message ───────────────────────────────────────────────────────────
 
+async function triggerOrientation() {
+  if (busy) return;
+  busy = true;
+  sendBtn.disabled = true;
+  input.disabled   = true;
+  setStatus('LOADING...');
+  messages.push({ role: 'user', content: 'Begin.' });
+  const assistantBody = appendMsg('assistant', '', true);
+  try {
+    const result = await streamResponse(messages, assistantBody);
+    if (result !== null) messages.push({ role: 'assistant', content: result });
+    else messages.pop();
+  } catch (e) {
+    appendError('I/O ERROR: ' + e.message);
+    messages.pop();
+  } finally {
+    busy = false;
+    sendBtn.disabled = false;
+    input.disabled   = false;
+    setStatus('READY');
+    input.focus();
+  }
+}
+
 async function sendMessage(text) {
   if (!text || busy) return;
   busy = true;
@@ -391,7 +415,20 @@ function loadFiles() {
         filesList.appendChild(btn);
         if (f.name === 'OVERVIEW.md') overview = f;
       });
-      if (overview) openFile(overview);
+      if (overview) {
+        // Parse menu from OVERVIEW.md without loading it as a user message
+        fetch('file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: overview.path }),
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (!data.error) renderMenuItems(parseMenuItems(data.content));
+          });
+        // Trigger Claude's orientation silently
+        triggerOrientation();
+      }
     })
     .catch(() => {
       filesList.innerHTML = '<span class="sb-empty">error loading files</span>';
