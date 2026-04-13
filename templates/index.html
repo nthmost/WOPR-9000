@@ -199,7 +199,7 @@ async function streamResponse(msgList, assistantBody) {
   let accumulated = '';
   currentAbort = new AbortController();
   stopBtn.style.display = '';
-  const resp = await fetch('/chat', {
+  const resp = await fetch('chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages: msgList }),
@@ -369,7 +369,7 @@ function renderMenuItems(items) {
 
 function loadFiles() {
   const filesList = document.getElementById('files-list');
-  fetch('/files')
+  fetch('files')
     .then(r => r.json())
     .then(files => {
       if (!files.length) {
@@ -396,7 +396,7 @@ async function openFile(f) {
   // Fetch file content
   let data;
   try {
-    const resp = await fetch('/file', {
+    const resp = await fetch('file', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: f.path }),
