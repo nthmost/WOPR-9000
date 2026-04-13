@@ -15,6 +15,7 @@ import urllib.parse
 from pathlib import Path
 from functools import wraps
 from flask import Flask, request, jsonify, session, redirect, url_for, render_template, Response
+from werkzeug.middleware.proxy_fix import ProxyFix
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
@@ -22,6 +23,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'change-this-in-production-wopr9000')
+app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)
 
 # ── Configuration ──────────────────────────────────────────────────────────
 
