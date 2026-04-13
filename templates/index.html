@@ -236,6 +236,10 @@ async function streamResponse(msgList, assistantBody) {
         assistantBody.innerHTML = escHtml(payload.error);
         return null;
       }
+      if (payload.status) {
+        assistantBody.innerHTML = `<span class="thinking-indicator">${escHtml(payload.status)}</span><span class="cursor"></span>`;
+        scrollBottom();
+      }
       if (payload.thinking_start) {
         const isWin = document.body.dataset.theme === 'win311';
         assistantBody.innerHTML = `<span class="thinking-indicator">${isWin ? 'thinking...' : 'THINKING...'}</span><span class="cursor"></span>`;

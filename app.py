@@ -70,27 +70,69 @@ def load_documents():
 
 def build_system_prompt(docs):
     """
-    Build the system prompt from:
-    1. SYSTEM_PROMPT.md in DOCS_DIR (if present) — sets the persona/framing
-    2. All other documents appended as context
+    Build the system prompt from SYSTEM_PROMPT.md and FILES/OVERVIEW.md only.
+    All other documents are fetched on demand via the fetch_document tool.
     """
     parts = []
     system_file = DOCS_DIR / 'SYSTEM_PROMPT.md'
     if system_file.exists():
         parts.append(system_file.read_text(encoding='utf-8').strip())
-        parts.append('\n\n---\n\n# DOCUMENTS\n')
     else:
         parts.append(
-            "You are a knowledgeable assistant grounded in the documents provided below. "
-            "Answer questions accurately and thoroughly from the source material. "
-            "Be as detailed as the question warrants. Do not artificially truncate responses."
+            "You are a knowledgeable assistant. "
+            "Use the fetch_document tool to retrieve source material as needed."
         )
-        parts.append('\n\n---\n\n# DOCUMENTS\n')
-    for name, content in docs.items():
-        if name == 'SYSTEM_PROMPT.md':
-            continue
-        parts.append(f"\n## {name}\n\n{content}\n")
+    overview_file = DOCS_DIR / 'FILES' / 'OVERVIEW.md'
+    if overview_file.exists():
+        parts.append('\n\n---\n\n# OVERVIEW\n\n' + overview_file.read_text(encoding='utf-8'))
+    parts.append(
+        "\n\n---\n\n"
+        "You have access to a fetch_document tool to retrieve specific documents from the corpus. "
+        "Use it when you need source material to answer a question accurately. "
+        "Fetch only what is relevant to the specific question. "
+        "The document index in OVERVIEW.md lists all available files and what each contains."
+    )
     return '\n'.join(parts)
+
+
+def fetch_document_content(path):
+    """Safely fetch a document from DOCS_DIR by relative path."""
+    target = (DOCS_DIR / path).resolve()
+    if not str(target).startswith(str(DOCS_DIR.resolve())):
+        return "Error: invalid path"
+    if not target.exists():
+        return f"Error: document not found: {path}"
+    try:
+        return target.read_text(encoding='utf-8')
+    except Exception as e:
+        return f"Error reading document: {e}"
+
+
+TOOLS = [
+    {
+        "name": "fetch_document",
+        "description": (
+            "Fetch the full content of a specific document from the corpus. "
+            "Use this when you need primary source material to answer a question accurately. "
+            "Fetch only the documents relevant to the specific question being asked."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Relative path within docs/, exactly as listed in the document index. "
+                        "Examples: 'DNS_Episode_Feb7_2026.md', "
+                        "'semipublic/admin-chat__2026-01.md', "
+                        "'private/DM_mcint_nthmost__2026-02.md'"
+                    )
+                }
+            },
+            "required": ["path"]
+        }
+    }
+]
 
 
 def _reload():
@@ -213,42 +255,50 @@ def chat():
 
     def generate():
         try:
+            internal_messages = list(messages)
             input_tokens = 0
             output_tokens = 0
-            with client.messages.stream(
-                model=MODEL,
-                max_tokens=MAX_TOKENS,
-                thinking={'type': 'enabled', 'budget_tokens': 8000},
-                system=SYSTEM_PROMPT,
-                messages=messages,
-            ) as stream:
-                thinking_active = False
-                for event in stream:
-                    etype = getattr(event, 'type', None)
 
-                    if etype == 'message_start':
-                        usage = getattr(getattr(event, 'message', None), 'usage', None)
-                        if usage:
-                            input_tokens = getattr(usage, 'input_tokens', 0)
+            while True:
+                response = client.messages.create(
+                    model=MODEL,
+                    max_tokens=MAX_TOKENS,
+                    thinking={'type': 'enabled', 'budget_tokens': 5000},
+                    system=SYSTEM_PROMPT,
+                    tools=TOOLS,
+                    messages=internal_messages,
+                )
 
-                    elif etype == 'message_delta':
-                        usage = getattr(event, 'usage', None)
-                        if usage:
-                            output_tokens = getattr(usage, 'output_tokens', 0)
+                input_tokens += response.usage.input_tokens
+                output_tokens += response.usage.output_tokens
 
-                    elif etype == 'content_block_start':
-                        btype = getattr(getattr(event, 'content_block', None), 'type', None)
-                        if btype == 'thinking':
-                            thinking_active = True
-                            yield f"data: {json.dumps({'thinking_start': True})}\n\n"
-                        elif btype == 'text' and thinking_active:
-                            thinking_active = False
-                            yield f"data: {json.dumps({'thinking_end': True})}\n\n"
+                if response.stop_reason != 'tool_use':
+                    for block in response.content:
+                        if getattr(block, 'type', None) == 'text':
+                            yield f"data: {json.dumps({'text': block.text})}\n\n"
+                    break
 
-                    elif etype == 'content_block_delta':
-                        delta = getattr(event, 'delta', None)
-                        if delta and getattr(delta, 'type', None) == 'text_delta':
-                            yield f"data: {json.dumps({'text': delta.text})}\n\n"
+                # Process tool calls
+                tool_results = []
+                for block in response.content:
+                    if getattr(block, 'type', None) == 'tool_use':
+                        path = block.input.get('path', '')
+                        yield f"data: {json.dumps({'status': f'[ LOADING: {path} ]'})}\n\n"
+                        content = fetch_document_content(path)
+                        tool_results.append({
+                            'type': 'tool_result',
+                            'tool_use_id': block.id,
+                            'content': content,
+                        })
+
+                internal_messages.append({
+                    'role': 'assistant',
+                    'content': [b.model_dump() for b in response.content],
+                })
+                internal_messages.append({
+                    'role': 'user',
+                    'content': tool_results,
+                })
 
             yield f"data: {json.dumps({'done': True, 'usage': {'input': input_tokens, 'output': output_tokens}})}\n\n"
         except Exception as e:
