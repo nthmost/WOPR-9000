@@ -377,6 +377,7 @@ function loadFiles() {
         return;
       }
       filesList.innerHTML = '';
+      let overview = null;
       files.forEach(f => {
         const btn = document.createElement('button');
         btn.className = 'file-item';
@@ -384,7 +385,9 @@ function loadFiles() {
         btn.title = f.path;
         btn.addEventListener('click', () => openFile(f));
         filesList.appendChild(btn);
+        if (f.name === 'OVERVIEW.md') overview = f;
       });
+      if (overview) openFile(overview);
     })
     .catch(() => {
       filesList.innerHTML = '<span class="sb-empty">error loading files</span>';
